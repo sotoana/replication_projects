@@ -7,3 +7,6 @@ We will use this repo to document the selected replication projects we will comp
 - Maybe [DS 250 Data Science Programming](https://byuistats.github.io/DS250-Course/projects.html)
 
 ## Selected projects
+
+1. [DS350: Stock Market Time Data](ds350_interacting_with_time/readme.md)
+2. [Accidents over time](accidents_time/readme.md)
