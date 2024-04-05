@@ -1,0 +1,155 @@
+---
+title: "Replication Project - Interacting with time"
+subtitle: "DS 460"
+author: "[ANA SOTO]"
+format:
+  html:
+    self-contained: true
+    page-layout: full
+    title-block-banner: true
+    toc: true
+    toc-depth: 3
+    toc-location: body
+    number-sections: false
+    html-math-method: katex
+    code-fold: true
+    code-summary: "Show the code"
+    code-overflow: wrap
+    code-copy: hover
+    code-tools:
+        source: false
+        toggle: true
+        caption: See code
+execute: 
+  warning: false
+    
+---
+
+For the replication project, I decided to choose the "Interacting with time" case study from DS 350. I thought it would be fun to recreate it using polars, since its somewhat familiar from a previous semester.
+
+## Import modules
+
+```{python}
+
+import polars as pl
+import pandas as pd
+import yfinance as yf
+import requests
+from lets_plot import ggplot, aes, geom_line, geom_bar, scale_fill_manual, ggtitle, xlab, ylab, scale_x_datetime, scale_color_discrete, LetsPlot
+
+```
+
+
+
+## Data Extraction using API
+
+At first, I was very confused on where to get the actual historical data. As this setup is a bit different from the other class. Because the code included only gives us a list of tickers to use. So, in order to extract the necessary data, we needed to use the yahoo finance api.
+
+```{python}
+
+url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+
+response = requests.get(url, verify=False)
+html_content = response.content
+
+table = pd.read_html(html_content)[0]
+
+# Extract tickers
+tickers_500 = table["Symbol"].tolist()
+
+```
+
+```{python}
+
+all_data = pd.DataFrame()
+
+# Iterate through each ticker
+for ticker in tickers_500:
+    # Retrieve historical data for the ticker
+    data = yf.download(ticker, period="5y", interval="1d")
+    
+    # Add a column for ticker symbol
+    data['Ticker'] = ticker
+    
+    # Concatenate the data for each ticker
+    all_data = pd.concat([all_data, data])
+
+# Reset index
+all_data = all_data.reset_index()
+#print(all_data)
+
+```
+
+### Back to polars
+
+```{python}
+
+all_data_pl = pl.from_pandas(all_data) \
+    .melt(id_vars="Date") \
+    .with_columns(
+        pl.col("variable").str.replace_many(["'", "(", ")"], "").str.split_exact(",", 1).alias("variable")) \
+    .unnest("variable") \
+    .rename({"Date": "date"}) \
+    .pivot(
+        values="value",
+        index=["date", "field_1"],
+        columns="field_0",
+        aggregate_function="first") \
+    .rename({"field_1": "ticker"})
+
+```    
+
+
+### Stock Prices Over Time
+
+
+```{python}
+
+# Extract necessary columns: Date and Close price
+stockdata = all_data[['Date', 'Close', 'Ticker']].copy()  # Make a copy to avoid SettingWithCopyWarning
+stockdata['Date'] = pd.to_datetime(stockdata['Date'])
+
+# Setup lets-plot to output HTML
+LetsPlot.setup_html()
+
+# Interactive Visualization with lets-plot
+ggplot(stockdata, aes(x='Date', y='Close', color='Ticker')) + \
+    geom_line(size=1) + \
+    ggtitle("Stocks Over the Last 5 Years") + \
+    xlab("Date") + \
+    ylab("Close Price") + \
+    scale_x_datetime(labels=["%b %Y"]) + \
+    scale_color_discrete(name="Ticker")
+
+```
+
+Lets take a look at the stock performance over the last five years. First off, any investor would be interested in looking at which stocks have performed higher over the last couple of years. For example, NVR which is construction and mortgage banking company, has performed quite well the last few years. Right below it, is the BKNG stock for an online travel booking company.
+
+```{python}
+
+#price
+price_plot = ggplot(all_data_pl) + \
+    geom_line(aes(x='date', y='Close', color='ticker'), size=1) + \
+    ggtitle("Stock Prices Over Time") + \
+    xlab("Date") + \
+    ylab("Close Price") + \
+    scale_x_datetime(labels="%b %Y") + \
+    scale_color_discrete(name="Ticker")
+
+
+#volume over time
+volume_plot = ggplot(all_data_pl) + \
+    geom_bar(aes(x='date', y='Volume', fill='ticker'), stat='identity') + \
+    ggtitle("Trading Volume Over Time") + \
+    xlab("Date") + \
+    ylab("Volume") + \
+    scale_x_datetime(labels="%b %Y") + \
+    scale_fill_manual(values=['blue']) 
+
+combined_plot = price_plot + volume_plot
+
+print(combined_plot)
+
+```
+
+Now, lets take a look at volume which is a very important metric in the investment industry. As it can give insight on market activity or investor interest on stocks. The combination of both volumen and price increase is a sign of possible stability, and can give a sense of security to the investor. After looking at the results of this graph, we can see that it might be a good idea to invest in the 3M Company stocks (MMM). As it seems like their volume in good.
